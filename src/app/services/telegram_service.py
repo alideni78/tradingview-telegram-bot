@@ -43,22 +43,9 @@ class TelegramService:
         try:
             message_text = position.to_telegram_message()
 
-            # Create inline keyboard with close button
-            keyboard = {
-                "inline_keyboard": [
-                    [
-                        {
-                            "text": "❌ Mark as closed",
-                            "callback_data": f"close_{position.symbol}",
-                        }
-                    ]
-                ]
-            }
-
             payload = {
                 "chat_id": position.chat_id,
                 "text": message_text,
-                "reply_markup": keyboard,
                 "parse_mode": "HTML",
             }
 
@@ -110,7 +97,7 @@ class TelegramService:
             chat_id: Telegram chat ID
             message_id: Message ID to edit
             position: Updated position
-            remove_button: Whether to remove the inline button
+            remove_button: Whether to remove the inline button (unused, kept for compatibility)
 
         Returns:
             True if successful, False otherwise
@@ -124,20 +111,6 @@ class TelegramService:
                 "text": message_text,
                 "parse_mode": "HTML",
             }
-
-            # Remove button if position is closed
-            if not remove_button:
-                keyboard = {
-                    "inline_keyboard": [
-                        [
-                            {
-                                "text": "❌ Mark as closed",
-                                "callback_data": f"close_{position.symbol}",
-                            }
-                        ]
-                    ]
-                }
-                payload["reply_markup"] = keyboard
 
             response = await self.client.post(f"{self.base_url}/editMessageText", json=payload)
             response.raise_for_status()
