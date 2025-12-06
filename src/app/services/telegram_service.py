@@ -31,11 +31,16 @@ class TelegramService:
         """Close HTTP client."""
         await self.client.aclose()
 
-    async def send_position_message(self, position: Position) -> Optional[int]:
+    async def send_position_message(
+        self, 
+        position: Position,
+        reply_to_message_id: Optional[int] = None
+    ) -> Optional[int]:
         """Send position message to Telegram.
 
         Args:
             position: Position to send
+            reply_to_message_id: Optional message ID to reply to
 
         Returns:
             Message ID if successful, None otherwise
@@ -48,6 +53,10 @@ class TelegramService:
                 "text": message_text,
                 "parse_mode": "HTML",
             }
+            
+            # Add reply if specified
+            if reply_to_message_id:
+                payload["reply_to_message_id"] = reply_to_message_id
 
             response = await self.client.post(f"{self.base_url}/sendMessage", json=payload)
             response.raise_for_status()
