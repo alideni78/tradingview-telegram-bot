@@ -19,6 +19,8 @@ class PositionStatus(str, Enum):
     """Position status."""
 
     OPEN = "OPEN"
+    NEW_LONG = "NEW LONG"
+    NEW_SHORT = "NEW SHORT"
     CLOSED_BY_REVERSE = "CLOSED · by reverse signal"
     CLOSED_BY_SL = "CLOSED · by reached SL at"
     CLOSED_MANUALLY = "CLOSED · manually"
@@ -71,7 +73,7 @@ class Position(BaseModel):
         ]
 
         # Format status line
-        if self.status == PositionStatus.OPEN:
+        if self.status in [PositionStatus.OPEN, PositionStatus.NEW_LONG, PositionStatus.NEW_SHORT]:
             status_line = f"Status: {self.status.value}"
         elif self.status == PositionStatus.CLOSED_BY_SL and self.exit_price:
             status_line = f"Status: {self.status.value} {self.exit_price:,.2f}"
