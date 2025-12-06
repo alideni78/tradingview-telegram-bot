@@ -1,12 +1,12 @@
 """Service for managing trading positions."""
 
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import structlog
 
 from ..core.exceptions import PositionNotFoundError
-from ..models import Position, PositionStatus
+from ..models import Position, PositionSide, PositionStatus
 
 logger = structlog.get_logger(__name__)
 
@@ -16,7 +16,7 @@ class PositionManager:
 
     def __init__(self) -> None:
         """Initialize position manager."""
-        self._positions: Dict[str, Position] = {}
+        self._positions: Dict[str, List[Position]] = {}
         logger.info("position_manager_initialized")
 
     def has_open_position(self, symbol: str) -> bool:
@@ -28,10 +28,29 @@ class PositionManager:
         Returns:
             True if position exists and is open
         """
-        return symbol.upper() in self._positions
+        positions = self._positions.get(symbol.upper(), [])
+        return any(
+            p.status in [PositionStatus.OPEN, PositionStatus.NEW_LONG, PositionStatus.NEW_SHORT]
+            for p in positions
+        )
+
+    def get_open_position(self, symbol: str) -> Optional[Position]:
+        """Get open position by symbol.
+
+        Args:
+            symbol: Trading symbol
+
+        Returns:
+            Open position if found, None otherwise
+        """
+        positions = self._positions.get(symbol.upper(), [])
+        for position in reversed(positions):
+            if position.status == PositionStatus.OPEN:
+                return position
+        return None
 
     def get_position(self, symbol: str) -> Optional[Position]:
-        """Get position by symbol.
+        """Get latest position by symbol.
 
         Args:
             symbol: Trading symbol
@@ -39,7 +58,8 @@ class PositionManager:
         Returns:
             Position if found, None otherwise
         """
-        return self._positions.get(symbol.upper())
+        positions = self._positions.get(symbol.upper(), [])
+        return positions[-1] if positions else None
 
     def add_position(self, position: Position) -> None:
         """Add a new position.
@@ -48,7 +68,9 @@ class PositionManager:
             position: Position to add
         """
         symbol = position.symbol.upper()
-        self._positions[symbol] = position
+        if symbol not in self._positions:
+            self._positions[symbol] = []
+        self._positions[symbol].append(position)
         logger.info(
             "position_added",
             symbol=symbol,
@@ -56,10 +78,39 @@ class PositionManager:
             entry_price=float(position.entry_price),
         )
 
-    def close_position(
-        self, symbol: str, status: PositionStatus, exit_price: Optional[Decimal] = None
-    ) -> Position:
-        """Close a position.
+    def mark_position_as_new(self, symbol: str, side: PositionSide) -> Optional[Position]:
+        """Mark current open position as NEW.
+
+        Args:
+            symbol: Trading symbol
+            side: Position side to check
+
+        Returns:
+            Updated position if found, None otherwise
+        """
+        open_position = self.get_open_position(symbol.upper())
+        if not open_position:
+            return None
+
+        if open_position.side != side:
+            return None
+
+        # Update status to NEW LONG or NEW SHORT
+        open_position.status = (
+            PositionStatus.NEW_LONG if side == PositionSide.LONG else PositionStatus.NEW_SHORT
+        )
+
+        logger.info(
+            "position_marked_as_new",
+            symbol=symbol,
+            side=side.value,
+            new_status=open_position.status.value,
+        )
+
+        return open_position
+
+    def close_position(self, symbol: str, status: PositionStatus, exit_price: Optional[Decimal] = None) -> Position:
+        """Close current open position.
 
         Args:
             symbol: Trading symbol
@@ -72,13 +123,11 @@ class PositionManager:
         Raises:
             PositionNotFoundError: If position doesn't exist
         """
-        symbol = symbol.upper()
-        position = self._positions.pop(symbol, None)
-
-        if not position:
+        open_position = self.get_open_position(symbol.upper())
+        if not open_position:
             raise PositionNotFoundError(f"No open position for {symbol}")
 
-        position.close(status=status, exit_price=exit_price)
+        open_position.close(status=status, exit_price=exit_price)
 
         logger.info(
             "position_closed",
@@ -87,7 +136,7 @@ class PositionManager:
             exit_price=float(exit_price) if exit_price else None,
         )
 
-        return position
+        return open_position
 
     def handle_reverse_signal(self, symbol: str) -> Position:
         """Handle reverse signal (close with reverse status).
@@ -135,16 +184,22 @@ class PositionManager:
         logger.info("manual_close_triggered", symbol=symbol)
         return self.close_position(symbol, PositionStatus.CLOSED_MANUALLY)
 
-    def get_all_positions(self) -> Dict[str, Position]:
+    def get_all_open_positions(self) -> Dict[str, Position]:
         """Get all open positions.
 
         Returns:
             Dictionary of symbol -> Position
         """
-        return self._positions.copy()
+        open_positions = {}
+        for symbol, positions in self._positions.items():
+            for position in reversed(positions):
+                if position.status == PositionStatus.OPEN:
+                    open_positions[symbol] = position
+                    break
+        return open_positions
 
     def clear_all(self) -> None:
         """Clear all positions (for testing)."""
-        count = len(self._positions)
+        count = sum(len(positions) for positions in self._positions.values())
         self._positions.clear()
         logger.info("all_positions_cleared", count=count)
