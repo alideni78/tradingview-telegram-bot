@@ -8,22 +8,51 @@ from pydantic import BaseModel, Field, field_validator
 class TradingViewWebhook(BaseModel):
     """TradingView webhook request body."""
 
-    message: str = Field(..., description="Alert message from TradingView")
+    # Support both old format (message) and new format (JSON fields)
+    message: Optional[str] = Field(None, description="Alert message from TradingView (old format)")
+    ticker: Optional[str] = Field(None, description="Symbol/Ticker")
+    signal: Optional[str] = Field(None, description="Signal type: BUY, SELL, STOP LOSS")
+    timeframe: Optional[str] = Field(None, description="Timeframe")
+    time: Optional[str] = Field(None, description="Signal time")
+    timenow: Optional[str] = Field(None, description="Current time")
+    entry: Optional[float] = Field(None, description="Entry price")
+    stopLoss: Optional[float] = Field(None, description="Stop loss price")
+    takeProfit1: Optional[float] = Field(None, description="Take profit 1")
+    takeProfit2: Optional[float] = Field(None, description="Take profit 2")
+    takeProfit3: Optional[float] = Field(None, description="Take profit 3")
+    secretKey: Optional[str] = Field(None, description="Secret key for authentication")
 
-    @field_validator("message")
-    @classmethod
-    def validate_message(cls, v: str) -> str:
-        """Validate message is not empty."""
-        if not v or not v.strip():
-            raise ValueError("Message cannot be empty")
-        return v.strip()
+    def to_message_format(self) -> str:
+        """Convert JSON format to message format."""
+        if self.message:
+            return self.message
+        
+        # Convert new format to old format
+        ticker = self.ticker or "UNKNOWN"
+        signal_type = self.signal or "UNKNOWN"
+        time = self.time or self.timenow or "Unknown"
+        entry = self.entry or 0
+        stop_loss = self.stopLoss or 0
+        
+        # Map signal types
+        if signal_type.upper() in ["BUY", "LONG"]:
+            signal_text = "BUY SIGNAL"
+        elif signal_type.upper() in ["SELL", "SHORT"]:
+            signal_text = "SELL SIGNAL"
+        elif signal_type.upper() in ["STOP LOSS", "SL", "STOP_LOSS"]:
+            signal_text = "STOP LOSS"
+            return f"{ticker} - {signal_text}\nTime: {time}\nExit Price: {entry}"
+        else:
+            signal_text = f"{signal_type} SIGNAL"
+        
+        return f"{ticker} - {signal_text}\nTime: {time}\nEntry Price: {entry}\nStop Loss: {stop_loss}"
 
     class Config:
         """Pydantic config."""
 
         json_schema_extra = {
             "example": {
-                "message": "BTCUSDT - BUY SIGNAL\nTime: 2025-12-05 10:30:00\nEntry Price: 42,150.50\nStop Loss: 41,800.00"
+                "message": "BTCUSDT - BUY SIGNAL\nTime: 2025-12-05 10:30:00\nEntry Price: 42150.50\nStop Loss: 41800.00"
             }
         }
 
